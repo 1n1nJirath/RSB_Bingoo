@@ -304,10 +304,12 @@ with tab_play:
                 cat_name = st.session_state.categories_map.get(target, "ไม่พบหมวดหมู่")
                 
                 wheel_html = get_wheel_html(target, cat_name, st.session_state.pool_numbers)
-                spin_placeholder.components.html(wheel_html, height=400)
+                
+                # แก้ไขการเรียกใช้ HTML Component ตรงนี้
+                with spin_placeholder:
+                    components.html(wheel_html, height=400)
                 
                 # เผื่อเวลาให้ Javascript แสดงเอฟเฟกต์กวนๆ จนจบ (~4.3 วินาที)
-                # เราให้ Streamlit หลับไป 4.4 วินาทีแล้วค่อยรีเฟรชกระดานขวา
                 time.sleep(4.4) 
                 
                 st.session_state.drawn_numbers.append(target)
@@ -320,7 +322,10 @@ with tab_play:
                 last_draw = st.session_state.current_draw
                 cat_name = st.session_state.categories_map.get(last_draw, "")
                 static_html = get_static_result_html(last_draw, cat_name, is_bingo=st.session_state.bingo_won)
-                spin_placeholder.components.html(static_html, height=400)
+                
+                # แก้ไขการเรียกใช้ HTML Component ตรงนี้
+                with spin_placeholder:
+                    components.html(static_html, height=400)
             else:
                 spin_placeholder.markdown("<div style='text-align:center; font-size: 24px; color: gray; padding: 40px; border: 3px dashed #555; border-radius: 15px;'>รอการสุ่ม...</div>", unsafe_allow_html=True)
 
