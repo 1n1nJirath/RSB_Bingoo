@@ -333,3 +333,98 @@ tab_play, tab_setup = st.tabs(["🎮 โหมดเล่นเกม", "⚙️
 
 # ----------------- จัดเตรียมกระดาน -----------------
 with tab_setup:
+    st.header("1. ระบบจับคู่หมวดหมู่กับตัวเลข")
+    default_cats = "\n".join([f"หมวดที่ {i}" for i in range(1, 51)])
+    raw_cats = st.text_area("ป้อนรายชื่อหมวดหมู่ (บรรทัดละ 1 หมวด) แล้วกดปุ่มด้านล่าง ระบบจะสุ่มจับคู่กับเลขให้", default_cats, height=150)
+    
+    if st.button("🔄 สุ่มจับคู่หมวดหมู่กับตัวเลข", type="primary"):
+        cat_list = [c.strip() for c in raw_cats.split('\n') if c.strip()]
+        random.shuffle(cat_list)
+        st.session_state.categories_map = {str(i+1): cat for i, cat in enumerate(cat_list)}
+        st.session_state.pool_numbers = list(st.session_state.categories_map.keys())
+        st.success(f"✅ จับคู่สำเร็จทั้งหมด {len(cat_list)} หมวดหมู่! สามารถไปดูผลได้ในโหมดเล่นเกม")
+        reset_game()
+        
+    st.markdown("---")
+    st.header("2. กรอกตัวเลขลงกระดาน (มีเฉพาะตัวเลข)")
+    col_btn1, col_btn2 = st.columns([1, 4])
+    with col_btn1:
+        st.button("✨ สุ่มเติมเลขลงช่องว่าง", on_click=autofill_numbers, use_container_width=True)
+    with col_btn2:
+        st.button("🔄 ล้างกระดานใหม่ทั้งหมด", on_click=reset_game, type="secondary", use_container_width=True)
+
+    st.write("")
+    size = st.session_state.grid_size
+    for r in range(size):
+        cols = st.columns(size)
+        for c in range(size):
+            with cols[c]:
+                st.text_input(f"R{r}C{c}", key=f"cell_{r}_{c}", label_visibility="collapsed", placeholder="-")
+
+# ----------------- หน้าเล่นเกม -----------------
+with tab_play:
+    if not st.session_state.categories_map:
+        st.warning("⚠️ กรุณาไปที่แท็บ 'ตั้งค่ากระดาน' เพื่อสุ่มจับคู่หมวดหมู่กับตัวเลขก่อนเริ่มเล่น")
+        st.stop()
+
+    if st.session_state.is_spinning:
+        # === โหมดหมุนเต็มจอ (แบบรอกดปิดเอง) ===
+        target = st.session_state.pending_target
+        cat_name = st.session_state.categories_map.get(target, "")
+        
+        # เรนเดอร์ HTML วงล้อ (ซึ่งตัวมันเองมีระบบดักจับการคลิกอยู่ด้านใน)
+        spin_overlay = st.empty()
+        with spin_overlay:
+            components.html(get_mega_wheel_html(target, cat_name, st.session_state.pool_numbers), height=700)
+            
+        # สร้างปุ่มสำหรับกดเพื่อปิดหน้าต่างนี้ (ปุ่มนี้จะถูก Javascript สั่งคลิกอัตโนมัติเมื่อกด Space/Click ที่ HTML)
+        # หรือถ้ากด Spacebar รัวๆ ตอนหมุน มันจะทำงานเหมือนปุ่ม "ข้าม (Skip)" ครับ
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            if st.button("🔙 ข้าม / ปิดและกลับกระดาน (Spacebar)", use_container_width=True):
+                st.session_state.drawn_numbers.append(st.session_state.pending_target)
+                st.session_state.current_draw = st.session_state.pending_target
+                st.session_state.pending_target = None
+                st.session_state.is_spinning = False
+                st.rerun()
+
+    else:
+        # === โหมดปกติ (แสดงแผงสุ่มซ้าย กระดานขวา) ===
+        col_left, col_right = st.columns([1.5, 2.5], gap="large")
+        
+        with col_left:
+            st.subheader("🎰 สุ่มบิงโก")
+            
+            valid_pool = [n for n in st.session_state.pool_numbers if n not in st.session_state.drawn_numbers]
+            
+            # ปุ่มสุ่ม
+            if st.button("🎯 กดเพื่อสุ่ม! (Spacebar)", use_container_width=True, type="primary"):
+                if valid_pool:
+                    st.session_state.pending_target = random.choice(valid_pool)
+                    st.session_state.is_spinning = True
+                    st.rerun() 
+                else:
+                    st.warning("สุ่มตัวเลขครบหมดแล้ว!")
+            
+            if st.session_state.current_draw:
+                last_draw = st.session_state.current_draw
+                cat_name = st.session_state.categories_map.get(last_draw, "")
+                components.html(get_static_result_html(last_draw, cat_name, is_bingo=st.session_state.bingo_won), height=300)
+            else:
+                st.markdown("<div style='text-align:center; font-size: 24px; color: gray; padding: 40px; border: 3px dashed #555; border-radius: 15px; margin-top:20px;'>กดปุ่ม Spacebar เพื่อเริ่มสุ่ม</div>", unsafe_allow_html=True)
+
+            st.markdown("---")
+            st.write(f"**ประวัติการออกหมายเลข ({len(st.session_state.drawn_numbers)}):**")
+            if st.session_state.drawn_numbers:
+                history_html = "".join([f"<span style='background:#333; color:#fff; border: 1px solid #555; padding:5px 10px; border-radius:15px; margin:2px; display:inline-block; font-weight:bold;'>{n}</span>" for n in st.session_state.drawn_numbers])
+                st.markdown(history_html, unsafe_allow_html=True)
+
+        with col_right:
+            if check_bingo() and not st.session_state.bingo_won:
+                st.session_state.bingo_won = True
+                st.balloons()
+                st.rerun()
+
+            header_text = "🏆 กระดานบิงโกแตกแล้ว!" if st.session_state.bingo_won else "📋 กระดานของคุณ"
+            st.subheader(header_text)
+            st.markdown(generate_board_html(), unsafe_allow_html=True)
