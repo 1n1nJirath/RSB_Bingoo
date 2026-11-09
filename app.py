@@ -1,8 +1,9 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import random
 import time
 
-st.set_page_config(page_title="Ultimate Bingo", layout="wide")
+st.set_page_config(page_title="Bingo iOS Wheel", layout="wide")
 
 # ==========================================
 # 1. ตั้งค่า State พื้นฐาน
@@ -15,8 +16,10 @@ if "current_draw" not in st.session_state:
     st.session_state.current_draw = None
 if "bingo_won" not in st.session_state:
     st.session_state.bingo_won = False
-if "play_sound" not in st.session_state:
-    st.session_state.play_sound = None
+if "categories_map" not in st.session_state:
+    st.session_state.categories_map = {} 
+if "pool_numbers" not in st.session_state:
+    st.session_state.pool_numbers = []
 
 def init_grid():
     size = st.session_state.grid_size
@@ -35,20 +38,18 @@ def reset_game():
     st.session_state.drawn_numbers = []
     st.session_state.current_draw = None
     st.session_state.bingo_won = False
-    st.session_state.play_sound = None
     size = st.session_state.grid_size
     for r in range(size):
         for c in range(size):
             st.session_state[f"cell_{r}_{c}"] = ""
 
-def change_grid_size(new_size):
-    st.session_state.grid_size = new_size
-    reset_game()
-
-def autofill_numbers(min_val, max_val):
+def autofill_numbers():
     size = st.session_state.grid_size
-    pool = [str(i) for i in range(min_val, max_val + 1)]
-    
+    if not st.session_state.pool_numbers:
+        st.warning("⚠️ กรุณาสุ่มจับคู่หมวดหมู่กับตัวเลขก่อนเติมช่องว่าง!")
+        return
+
+    pool = st.session_state.pool_numbers.copy()
     current_board = [st.session_state[f"cell_{r}_{c}"] for r in range(size) for c in range(size) if st.session_state[f"cell_{r}_{c}"]]
     available = [n for n in pool if n not in current_board]
     
@@ -65,24 +66,12 @@ def check_bingo():
     drawn = st.session_state.drawn_numbers
     if not drawn: return False
 
-    # เช็คแนวนอน
     for r in range(size):
-        if all(st.session_state[f"cell_{r}_{c}"] in drawn and st.session_state[f"cell_{r}_{c}"] != "" for c in range(size)):
-            return True
-    
-    # เช็คแนวตั้ง
+        if all(st.session_state[f"cell_{r}_{c}"] in drawn and st.session_state[f"cell_{r}_{c}"] != "" for c in range(size)): return True
     for c in range(size):
-        if all(st.session_state[f"cell_{r}_{c}"] in drawn and st.session_state[f"cell_{r}_{c}"] != "" for r in range(size)):
-            return True
-            
-    # เช็คแนวทแยง (ซ้ายบนไปขวาล่าง)
-    if all(st.session_state[f"cell_{i}_{i}"] in drawn and st.session_state[f"cell_{i}_{i}"] != "" for i in range(size)):
-        return True
-        
-    # เช็คแนวทแยง (ขวาบนไปซ้ายล่าง)
-    if all(st.session_state[f"cell_{i}_{size-1-i}"] in drawn and st.session_state[f"cell_{i}_{size-1-i}"] != "" for i in range(size)):
-        return True
-
+        if all(st.session_state[f"cell_{r}_{c}"] in drawn and st.session_state[f"cell_{r}_{c}"] != "" for r in range(size)): return True
+    if all(st.session_state[f"cell_{i}_{i}"] in drawn and st.session_state[f"cell_{i}_{i}"] != "" for i in range(size)): return True
+    if all(st.session_state[f"cell_{i}_{size-1-i}"] in drawn and st.session_state[f"cell_{i}_{size-1-i}"] != "" for i in range(size)): return True
     return False
 
 def generate_board_html():
@@ -96,140 +85,259 @@ def generate_board_html():
             bg_color = "#4CAF50" if is_drawn else "#262730"
             text_color = "white" if is_drawn else "#ffffff"
             border = "2px solid #4CAF50" if is_drawn else "1px solid #444"
-            shadow = "box-shadow: 0 0 15px rgba(76,175,80,0.5);" if is_drawn else ""
+            shadow = "box-shadow: 0 0 15px rgba(76,175,80,0.6);" if is_drawn else ""
             
-            # ลบการเว้นวรรคข้างหน้าออก เพื่อไม่ให้ Streamlit มองว่าเป็น Code Block
-            html += f"<div style='background-color:{bg_color}; color:{text_color}; border:{border}; {shadow} border-radius:10px; padding:15px; text-align:center; font-weight:bold; font-size:24px; min-height:70px; display:flex; align-items:center; justify-content:center; transition:0.3s;'>{val if val else '-'}</div>"
+            # รักษารูปแบบ 1 บรรทัดเพื่อกันบั๊ก Markdown
+            html += f"<div style='background-color:{bg_color}; color:{text_color}; border:{border}; {shadow} border-radius:10px; padding:15px; text-align:center; font-weight:bold; font-size:28px; min-height:80px; display:flex; align-items:center; justify-content:center; transition:0.3s;'>{val if val else '-'}</div>"
             
     html += "</div>"
     return html
 
-def render_audio():
-    if st.session_state.play_sound == "spin":
-        url = "https://actions.google.com/sounds/v1/foley/spinning_bicycle_wheel.ogg"
-    elif st.session_state.play_sound == "ding":
-        url = "https://actions.google.com/sounds/v1/fantasy/magic_chime.ogg"
-    elif st.session_state.play_sound == "bingo":
-        url = "https://actions.google.com/sounds/v1/crowds/crowd_cheering.ogg"
-    else:
-        return
-        
-    st.markdown(f'<audio autoplay="true" style="display:none;"><source src="{url}" type="audio/ogg"></audio>', unsafe_allow_html=True)
-    st.session_state.play_sound = None 
+# ==========================================
+# 3. โค้ด HTML สำหรับวงล้อสุ่ม (เพิ่มเอฟเฟกต์กวนๆ)
+# ==========================================
+def get_wheel_html(target_number, target_category, all_numbers):
+    js_numbers = str(all_numbers) 
+    
+    return f"""
+    <!DOCTYPE html>
+    <html lang="th">
+    <head>
+        <meta charset="UTF-8">
+        <style>
+            @import url('https://fonts.googleapis.com/css2?family=Kanit:wght@400;700&display=swap');
+            body {{ font-family: 'Kanit', sans-serif; background-color: transparent; color: white; display: flex; flex-direction: column; align-items: center; margin: 0; overflow: hidden; }}
+            .picker-container {{ position: relative; width: 300px; height: 250px; background: #1e1e1e; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); overflow: hidden; -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 35%, black 65%, transparent 100%); margin-top: 20px; }}
+            .picker-overlay {{ position: absolute; top: 50%; left: 0; right: 0; height: 50px; transform: translateY(-50%); border-top: 2px solid #FF4B4B; border-bottom: 2px solid #FF4B4B; background: rgba(255, 75, 75, 0.1); pointer-events: none; z-index: 10; }}
+            .picker-wheel {{ margin: 0; padding: 0; list-style: none; text-align: center; transform: translateY(100px); }}
+            .picker-item {{ height: 50px; line-height: 50px; font-size: 36px; font-weight: bold; color: #fff; }}
+            
+            .result-container {{ display: none; opacity: 0; text-align: center; padding: 40px 20px; background: linear-gradient(135deg, #FF416C 0%, #FF4B2B 100%); border-radius: 15px; box-shadow: 0 10px 20px rgba(255,75,43,0.4); margin-top: 20px; transition: opacity 1s; width: 100%; max-width: 450px; }}
+            .result-container h3 {{ margin: 0; font-size: 22px; color: #FFD700; }}
+            .result-container h1 {{ margin: 15px 0; font-size: 48px; font-weight: 900; line-height: 1.2; text-shadow: 2px 2px 4px rgba(0,0,0,0.3); }}
+            .result-container h2 {{ margin: 0; font-size: 28px; background: rgba(0,0,0,0.2); border-radius: 10px; padding: 10px; display: inline-block; }}
+        </style>
+    </head>
+    <body>
+        <audio id="spin-sound" src="https://actions.google.com/sounds/v1/foley/spinning_bicycle_wheel.ogg"></audio>
+        <audio id="win-sound" src="https://actions.google.com/sounds/v1/fantasy/magic_chime.ogg"></audio>
+
+        <div class="picker-container" id="picker">
+            <div class="picker-overlay"></div>
+            <ul class="picker-wheel" id="wheel"></ul>
+        </div>
+
+        <div class="result-container" id="result">
+            <h3>ได้แก่หมวดหมู่...</h3>
+            <h1 id="res-cat"></h1>
+            <h2>( หมายเลข <span id="res-num"></span> )</h2>
+        </div>
+
+        <script>
+            const targetNumber = "{target_number}";
+            const targetCategory = "{target_category}";
+            const numbers = {js_numbers}; 
+            const wheel = document.getElementById('wheel');
+            const itemHeight = 50;
+            const visibleCenterOffset = 100;
+
+            const trackItems = [...numbers, ...numbers, ...numbers, ...numbers, ...numbers, ...numbers];
+            const targetBaseIndex = numbers.indexOf(targetNumber);
+            const finalTargetIndex = (numbers.length * 4) + targetBaseIndex;
+
+            trackItems.forEach(num => {{
+                const li = document.createElement('li');
+                li.className = 'picker-item';
+                li.innerText = num;
+                wheel.appendChild(li);
+            }});
+
+            window.onload = () => {{
+                document.getElementById('spin-sound').play().catch(e => console.log(e));
+                
+                wheel.style.transition = 'none';
+                wheel.style.transform = `translateY(${{visibleCenterOffset - (targetBaseIndex * itemHeight)}}px)`;
+                wheel.offsetHeight; 
+                
+                // สุ่มรูปแบบความกวนโอ๊ย (0=ธรรมดา, 1=เลยแล้วถอยหลัง, 2=หยุดก่อนแล้วไหลต่อ)
+                const effectType = Math.floor(Math.random() * 3);
+                
+                if (effectType === 0) {{
+                    const positionY = visibleCenterOffset - (finalTargetIndex * itemHeight);
+                    wheel.style.transition = 'transform 4s cubic-bezier(0.1, 0.8, 0.1, 1)';
+                    wheel.style.transform = `translateY(${{positionY}}px)`;
+                }} 
+                else if (effectType === 1) {{
+                    // หมุนเลยไป 2 ช่อง
+                    const overshootIndex = finalTargetIndex + 2;
+                    const positionY = visibleCenterOffset - (overshootIndex * itemHeight);
+                    const finalY = visibleCenterOffset - (finalTargetIndex * itemHeight);
+                    
+                    wheel.style.transition = 'transform 2.8s cubic-bezier(0.1, 0.8, 0.2, 1)';
+                    wheel.style.transform = `translateY(${{positionY}}px)`;
+                    
+                    // ถอยหลังกลับมาช่องที่ถูก (Bounce)
+                    setTimeout(() => {{
+                        wheel.style.transition = 'transform 0.8s cubic-bezier(0.34, 1.56, 0.64, 1)';
+                        wheel.style.transform = `translateY(${{finalY}}px)`;
+                    }}, 3100);
+                }} 
+                else {{
+                    // หยุดก่อนเป้าหมาย 3 ช่อง
+                    const earlyIndex = finalTargetIndex - 3;
+                    const positionY = visibleCenterOffset - (earlyIndex * itemHeight);
+                    const finalY = visibleCenterOffset - (finalTargetIndex * itemHeight);
+                    
+                    wheel.style.transition = 'transform 2.5s cubic-bezier(0.1, 0.9, 0.3, 1)';
+                    wheel.style.transform = `translateY(${{positionY}}px)`;
+                    
+                    // ไหลลื่นปรื๊ดไปช่องที่ถูก
+                    setTimeout(() => {{
+                        wheel.style.transition = 'transform 1.2s ease-in-out';
+                        wheel.style.transform = `translateY(${{finalY}}px)`;
+                    }}, 2800);
+                }}
+
+                // แสดงผลลัพธ์ (รวมเวลาอนิเมชั่นทั้งหมดใช้เวลา ~4.2 วินาที)
+                setTimeout(() => {{
+                    document.getElementById('picker').style.display = 'none';
+                    const res = document.getElementById('result');
+                    res.style.display = 'block';
+                    document.getElementById('res-cat').innerText = targetCategory;
+                    document.getElementById('res-num').innerText = targetNumber;
+
+                    setTimeout(() => {{
+                        res.style.opacity = '1';
+                        document.getElementById('win-sound').play().catch(e => console.log(e));
+                    }}, 50);
+                }}, 4300);
+            }};
+        </script>
+    </body>
+    </html>
+    """
+
+def get_static_result_html(target_number, target_category, is_bingo=False):
+    bg = "linear-gradient(135deg, #FFD700 0%, #FFA500 100%)" if is_bingo else "linear-gradient(135deg, #FF416C 0%, #FF4B2B 100%)"
+    title = "🎉 BINGO แตกแล้ว! 🎉" if is_bingo else "ได้แก่หมวดหมู่..."
+    title_color = "#fff" if is_bingo else "#FFD700"
+    
+    return f"""
+    <!DOCTYPE html>
+    <html lang="th">
+    <head>
+        <meta charset="UTF-8">
+        <style>
+            @import url('https://fonts.googleapis.com/css2?family=Kanit:wght@400;700&display=swap');
+            body {{ font-family: 'Kanit', sans-serif; background-color: transparent; color: white; display: flex; flex-direction: column; align-items: center; margin: 0; }}
+            .result-container {{ text-align: center; padding: 40px 20px; background: {bg}; border-radius: 15px; box-shadow: 0 10px 20px rgba(0,0,0,0.4); margin-top: 20px; width: 100%; max-width: 450px; }}
+            .result-container h3 {{ margin: 0; font-size: 22px; color: {title_color}; text-shadow: 1px 1px 2px rgba(0,0,0,0.3); }}
+            .result-container h1 {{ margin: 15px 0; font-size: 48px; font-weight: 900; line-height: 1.2; text-shadow: 2px 2px 4px rgba(0,0,0,0.3); }}
+            .result-container h2 {{ margin: 0; font-size: 28px; background: rgba(0,0,0,0.2); border-radius: 10px; padding: 10px; display: inline-block; }}
+        </style>
+    </head>
+    <body>
+        <div class="result-container">
+            <h3>{title}</h3>
+            <h1>{target_category}</h1>
+            <h2>( หมายเลข <span>{target_number}</span> )</h2>
+        </div>
+    </body>
+    </html>
+    """
 
 # ==========================================
-# 3. สร้าง UI ของแอป
+# 4. สร้าง UI ของแอป
 # ==========================================
-st.title("🏆 Ultimate Bingo Generator")
+st.title("🏆 Bingo 5x5: Troll Wheel Edition")
 
 tab_play, tab_setup = st.tabs(["🎮 โหมดเล่นเกม", "⚙️ ตั้งค่ากระดาน (Host)"])
 
 # ----------------- จัดเตรียมกระดาน -----------------
 with tab_setup:
-    col_set1, col_set2, col_set3 = st.columns(3)
+    st.header("1. ระบบจับคู่หมวดหมู่กับตัวเลข")
+    default_cats = "\n".join([f"หมวดที่ {i}" for i in range(1, 51)])
+    raw_cats = st.text_area("ป้อนรายชื่อหมวดหมู่ (บรรทัดละ 1 หมวด) แล้วกดปุ่มด้านล่าง ระบบจะสุ่มจับคู่กับเลขให้", default_cats, height=150)
     
-    with col_set1:
-        new_size = st.selectbox("ขนาดตาราง", [3, 4, 5, 6, 7], index=[3, 4, 5, 6, 7].index(st.session_state.grid_size))
-        if new_size != st.session_state.grid_size:
-            change_grid_size(new_size)
-            st.rerun()
-            
-    with col_set2:
-        min_val = st.number_input("ตัวเลขต่ำสุด", value=1, step=1)
-    with col_set3:
-        max_val = st.number_input("ตัวเลขสูงสุด", value=75, step=1)
-
-    st.markdown("---")
-    
-    total_cells = st.session_state.grid_size ** 2
-    if (max_val - min_val + 1) < total_cells:
-        st.error(f"⚠️ ช่วงตัวเลขแคบเกินไป (ต้องมีอย่างน้อย {total_cells} ตัว เพื่อให้พอดีกับตาราง)")
-    else:
-        col_btn1, col_btn2 = st.columns([1, 4])
-        with col_btn1:
-            st.button("✨ สุ่มเติมช่องว่าง", on_click=autofill_numbers, args=(min_val, max_val), use_container_width=True)
-        with col_btn2:
-            st.button("🔄 ล้างกระดาน", on_click=reset_game, type="secondary", use_container_width=True)
-
-        st.markdown("---")
+    if st.button("🔄 สุ่มจับคู่หมวดหมู่กับตัวเลข", type="primary"):
+        cat_list = [c.strip() for c in raw_cats.split('\n') if c.strip()]
+        random.shuffle(cat_list)
+        st.session_state.categories_map = {str(i+1): cat for i, cat in enumerate(cat_list)}
+        st.session_state.pool_numbers = list(st.session_state.categories_map.keys())
+        st.success(f"✅ จับคู่สำเร็จทั้งหมด {len(cat_list)} หมวดหมู่! สามารถไปดูผลได้ในโหมดเล่นเกม")
+        reset_game()
         
-        size = st.session_state.grid_size
-        for r in range(size):
-            cols = st.columns(size)
-            for c in range(size):
-                with cols[c]:
-                    st.text_input(f"R{r}C{c}", key=f"cell_{r}_{c}", label_visibility="collapsed", placeholder="-")
+    st.markdown("---")
+    st.header("2. กรอกตัวเลขลงกระดาน (มีเฉพาะตัวเลข)")
+    col_btn1, col_btn2 = st.columns([1, 4])
+    with col_btn1:
+        st.button("✨ สุ่มเติมเลขลงช่องว่าง", on_click=autofill_numbers, use_container_width=True)
+    with col_btn2:
+        st.button("🔄 ล้างกระดานใหม่ทั้งหมด", on_click=reset_game, type="secondary", use_container_width=True)
+
+    st.write("")
+    size = st.session_state.grid_size
+    for r in range(size):
+        cols = st.columns(size)
+        for c in range(size):
+            with cols[c]:
+                st.text_input(f"R{r}C{c}", key=f"cell_{r}_{c}", label_visibility="collapsed", placeholder="-")
 
 # ----------------- หน้าเล่นเกม -----------------
 with tab_play:
-    render_audio()
+    if not st.session_state.categories_map:
+        st.warning("⚠️ กรุณาไปที่แท็บ 'ตั้งค่ากระดาน' เพื่อสุ่มจับคู่หมวดหมู่กับตัวเลขก่อนเริ่มเล่น")
+        st.stop()
+        
+    col_left, col_right = st.columns([1.5, 2.5], gap="large")
     
-    col_left, col_right = st.columns([1.2, 2.8], gap="large")
-    
+    # --- ฝั่งซ้าย: วงล้อ ---
     with col_left:
-        st.subheader("🎰 หมุนตัวเลข")
+        st.subheader("🎰 สุ่มบิงโก")
         spin_placeholder = st.empty()
         
-        pool_numbers = [str(i) for i in range(min_val, max_val + 1)]
+        valid_pool = [n for n in st.session_state.pool_numbers if n not in st.session_state.drawn_numbers]
         
-        if st.button("🎯 กดเพื่อสุ่มเลข!", use_container_width=True, type="primary"):
-            available_to_draw = [n for n in pool_numbers if n not in st.session_state.drawn_numbers]
-            
-            if available_to_draw:
-                spin_placeholder.markdown(
-                    '<audio autoplay="true" style="display:none;"><source src="https://actions.google.com/sounds/v1/foley/spinning_bicycle_wheel.ogg" type="audio/ogg"></audio>',
-                    unsafe_allow_html=True
-                )
-                for _ in range(15):
-                    temp_num = random.choice(pool_numbers)
-                    spin_placeholder.markdown(
-                        f"<div style='text-align:center; font-size: 60px; color: #ccc; padding: 20px; border: 3px dashed #555; border-radius: 15px;'>{temp_num}</div>", 
-                        unsafe_allow_html=True
-                    )
-                    time.sleep(0.06)
+        if st.button("🎯 กดเพื่อสุ่ม!", use_container_width=True, type="primary"):
+            if valid_pool:
+                target = random.choice(valid_pool)
+                cat_name = st.session_state.categories_map.get(target, "ไม่พบหมวดหมู่")
                 
-                final_draw = random.choice(available_to_draw)
-                st.session_state.drawn_numbers.append(final_draw)
-                st.session_state.current_draw = final_draw
+                wheel_html = get_wheel_html(target, cat_name, st.session_state.pool_numbers)
+                spin_placeholder.components.html(wheel_html, height=400)
                 
-                if check_bingo() and not st.session_state.bingo_won:
-                    st.session_state.bingo_won = True
-                    st.session_state.play_sound = "bingo"
-                    st.balloons() 
-                else:
-                    st.session_state.play_sound = "ding"
+                # เผื่อเวลาให้ Javascript แสดงเอฟเฟกต์กวนๆ จนจบ (~4.3 วินาที)
+                # เราให้ Streamlit หลับไป 4.4 วินาทีแล้วค่อยรีเฟรชกระดานขวา
+                time.sleep(4.4) 
                 
-                st.rerun() 
+                st.session_state.drawn_numbers.append(target)
+                st.session_state.current_draw = target
+                st.rerun()
             else:
                 st.warning("สุ่มตัวเลขครบหมดแล้ว!")
-
-        if st.session_state.current_draw:
-            bg_gradient = "linear-gradient(135deg, #FFD700 0%, #FFA500 100%)" if st.session_state.bingo_won else "linear-gradient(135deg, #FF416C 0%, #FF4B2B 100%)"
-            title_text = "🎉 BINGO! 🎉" if st.session_state.bingo_won else "เลขที่ออก"
-            
-            spin_placeholder.markdown(
-                f"""
-                <div style='text-align:center; padding: 30px; background: {bg_gradient}; 
-                            border-radius: 15px; color: white; box-shadow: 0 10px 20px rgba(0, 0, 0, 0.4);'>
-                    <h3 style='margin:0; opacity: 0.9;'>{title_text}</h3>
-                    <h1 style='margin:0; font-size: 80px; font-weight: 900;'>{st.session_state.current_draw}</h1>
-                </div>
-                """, 
-                unsafe_allow_html=True
-            )
         else:
-            spin_placeholder.markdown(
-                "<div style='text-align:center; font-size: 24px; color: gray; padding: 40px; border: 3px dashed #555; border-radius: 15px;'>รอการสุ่ม...</div>", 
-                unsafe_allow_html=True
-            )
+            if st.session_state.current_draw:
+                last_draw = st.session_state.current_draw
+                cat_name = st.session_state.categories_map.get(last_draw, "")
+                static_html = get_static_result_html(last_draw, cat_name, is_bingo=st.session_state.bingo_won)
+                spin_placeholder.components.html(static_html, height=400)
+            else:
+                spin_placeholder.markdown("<div style='text-align:center; font-size: 24px; color: gray; padding: 40px; border: 3px dashed #555; border-radius: 15px;'>รอการสุ่ม...</div>", unsafe_allow_html=True)
 
         st.markdown("---")
-        st.write(f"**ประวัติ ({len(st.session_state.drawn_numbers)}):**")
+        st.write(f"**ประวัติการออกหมายเลข ({len(st.session_state.drawn_numbers)}):**")
         if st.session_state.drawn_numbers:
             history_html = "".join([f"<span style='background:#333; color:#fff; border: 1px solid #555; padding:5px 10px; border-radius:15px; margin:2px; display:inline-block; font-weight:bold;'>{n}</span>" for n in st.session_state.drawn_numbers])
             st.markdown(history_html, unsafe_allow_html=True)
 
+    # --- ฝั่งขวา: ตาราง (มีแต่เลข) ---
     with col_right:
-        header_text = "🏆 กระดานบิงโกแตกแล้ว!" if st.session_state.bingo_won else f"📋 กระดานของคุณ ({st.session_state.grid_size}x{st.session_state.grid_size})"
+        if check_bingo() and not st.session_state.bingo_won:
+            st.session_state.bingo_won = True
+            st.balloons()
+            st.rerun()
+
+        header_text = "🏆 กระดานบิงโกแตกแล้ว!" if st.session_state.bingo_won else "📋 กระดานของคุณ"
         st.subheader(header_text)
+        
         st.markdown(generate_board_html(), unsafe_allow_html=True)
