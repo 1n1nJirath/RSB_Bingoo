@@ -6,6 +6,39 @@ import time
 st.set_page_config(page_title="Bingo Mega Wheel", layout="wide")
 
 # ==========================================
+# 0. ระบบคีย์ลัด (Keyboard Shortcuts)
+# ==========================================
+# ฝัง Javascript เข้าไปที่ Window หลัก เพื่อดักจับการกด Spacebar / Enter
+def inject_keyboard_shortcuts():
+    js = """
+    <script>
+    const doc = window.parent.document;
+    if (!doc.getElementById('bingo-shortcuts')) {
+        const script = doc.createElement('script');
+        script.id = 'bingo-shortcuts';
+        script.innerHTML = `
+            document.addEventListener('keydown', function(e) {
+                // เช็คว่ากด Spacebar หรือ Enter (และไม่ได้พิมพ์ช่อง Text อยู่)
+                if ((e.code === 'Space' || e.code === 'Enter') && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+                    e.preventDefault();
+                    // วนหาปุ่ม Streamlit แล้วสั่งคลิก
+                    const btns = document.querySelectorAll('button');
+                    btns.forEach(b => {
+                        if (b.innerText.includes('กดเพื่อสุ่ม! (Spacebar)')) b.click();
+                        if (b.innerText.includes('กลับกระดาน')) b.click();
+                    });
+                }
+            });
+        `;
+        doc.body.appendChild(script);
+    }
+    </script>
+    """
+    components.html(js, height=0, width=0)
+
+inject_keyboard_shortcuts()
+
+# ==========================================
 # 1. ตั้งค่า State พื้นฐาน
 # ==========================================
 if "grid_size" not in st.session_state:
@@ -98,7 +131,7 @@ def generate_board_html():
     return html
 
 # ==========================================
-# 3. โค้ด HTML วงล้อไซส์ยักษ์ (พร้อมเรทกาชา 8 เอฟเฟกต์)
+# 3. โค้ด HTML วงล้อไซส์ยักษ์
 # ==========================================
 def get_mega_wheel_html(target_number, target_category, all_numbers):
     js_numbers = str(all_numbers) 
@@ -110,7 +143,7 @@ def get_mega_wheel_html(target_number, target_category, all_numbers):
         <meta charset="UTF-8">
         <style>
             @import url('https://fonts.googleapis.com/css2?family=Kanit:wght@400;700&display=swap');
-            body {{ font-family: 'Kanit', sans-serif; background-color: #0e1117; color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; overflow: hidden; }}
+            body {{ font-family: 'Kanit', sans-serif; background-color: transparent; color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 95vh; margin: 0; overflow: hidden; cursor: pointer; }}
             .picker-container {{ position: relative; width: 450px; height: 400px; background: #1a1c23; border-radius: 20px; box-shadow: 0 15px 40px rgba(0,0,0,0.8); overflow: hidden; -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 25%, black 75%, transparent 100%); margin-bottom: 50px; }}
             .picker-overlay {{ position: absolute; top: 50%; left: 0; right: 0; height: 80px; transform: translateY(-50%); border-top: 3px solid #FF4B4B; border-bottom: 3px solid #FF4B4B; background: rgba(255, 75, 75, 0.1); pointer-events: none; z-index: 10; box-shadow: inset 0 0 15px rgba(255, 75, 75, 0.2); }}
             .picker-wheel {{ margin: 0; padding: 0; list-style: none; text-align: center; transform: translateY(160px); }}
@@ -120,6 +153,9 @@ def get_mega_wheel_html(target_number, target_category, all_numbers):
             .result-container h3 {{ margin: 0; font-size: 32px; color: #FFD700; }}
             .result-container h1 {{ margin: 20px 0; font-size: 72px; font-weight: 900; line-height: 1.1; text-shadow: 3px 3px 6px rgba(0,0,0,0.4); }}
             .result-container h2 {{ margin: 0; font-size: 36px; background: rgba(0,0,0,0.25); border-radius: 12px; padding: 15px; display: inline-block; }}
+            
+            .instruction {{ display: none; margin-top: 25px; font-size: 20px; color: #aaa; text-align: center; animation: pulse 1.5s infinite; }}
+            @keyframes pulse {{ 0% {{ opacity: 0.5; }} 50% {{ opacity: 1; }} 100% {{ opacity: 0.5; }} }}
         </style>
     </head>
     <body>
@@ -135,6 +171,7 @@ def get_mega_wheel_html(target_number, target_category, all_numbers):
             <h3>ได้แก่หมวดหมู่...</h3>
             <h1 id="res-cat"></h1>
             <h2>( หมายเลข <span id="res-num"></span> )</h2>
+            <div class="instruction" id="instruction">🖱️ คลิกหน้าจอ หรือ กด <b>Spacebar</b> เพื่อกลับไปที่กระดาน</div>
         </div>
 
         <script>
@@ -156,6 +193,14 @@ def get_mega_wheel_html(target_number, target_category, all_numbers):
                 wheel.appendChild(li);
             }});
 
+            // ฟังก์ชันสั่ง Streamlit ให้กดปุ่มซ่อนล้อ
+            function closeToBoard() {{
+                const btns = window.parent.document.querySelectorAll('button');
+                btns.forEach(b => {{
+                    if (b.innerText.includes('กลับกระดาน')) b.click();
+                }});
+            }}
+
             window.onload = () => {{
                 document.getElementById('spin-sound').play().catch(e => console.log(e));
                 
@@ -163,80 +208,65 @@ def get_mega_wheel_html(target_number, target_category, all_numbers):
                 wheel.style.transform = `translateY(${{visibleCenterOffset - (targetBaseIndex * itemHeight)}}px)`;
                 wheel.offsetHeight; 
                 
-                // === ระบบสุ่มเรทกาชา (Drop Rate) ===
                 const rand = Math.random() * 100;
                 let effectType = 0;
-                if (rand < 40) effectType = 0;      // 40% - Normal
-                else if (rand < 55) effectType = 1; // 15% - Speedster
-                else if (rand < 65) effectType = 2; // 10% - Overshoot
-                else if (rand < 75) effectType = 3; // 10% - Slide
-                else if (rand < 85) effectType = 4; // 10% - Tease
-                else if (rand < 90) effectType = 5; // 5%  - Snail
-                else if (rand < 95) effectType = 6; // 5%  - Glitch
-                else effectType = 7;                // 5%  - Fake Out
+                if (rand < 40) effectType = 0;      
+                else if (rand < 55) effectType = 1; 
+                else if (rand < 65) effectType = 2; 
+                else if (rand < 75) effectType = 3; 
+                else if (rand < 85) effectType = 4; 
+                else if (rand < 90) effectType = 5; 
+                else if (rand < 95) effectType = 6; 
+                else effectType = 7;                
                 
                 const finalY = visibleCenterOffset - (finalTargetIndex * itemHeight);
                 
-                if (effectType === 0) {{ // 1. Normal
+                if (effectType === 0) {{ 
                     wheel.style.transition = 'transform 3.8s cubic-bezier(0.1, 0.8, 0.1, 1)';
                     wheel.style.transform = `translateY(${{finalY}}px)`;
                 }} 
-                else if (effectType === 1) {{ // 2. Speedster
+                else if (effectType === 1) {{ 
                     wheel.style.transition = 'transform 1.8s cubic-bezier(0.2, 0.8, 0.2, 1)';
                     wheel.style.transform = `translateY(${{finalY}}px)`;
                 }} 
-                else if (effectType === 2) {{ // 3. Overshoot (เลยแล้วถอย)
+                else if (effectType === 2) {{ 
                     const overshootY = visibleCenterOffset - ((finalTargetIndex + 2) * itemHeight);
                     wheel.style.transition = 'transform 2.5s cubic-bezier(0.1, 0.8, 0.2, 1)';
                     wheel.style.transform = `translateY(${{overshootY}}px)`;
-                    setTimeout(() => {{
-                        wheel.style.transition = 'transform 0.8s cubic-bezier(0.34, 1.56, 0.64, 1)';
-                        wheel.style.transform = `translateY(${{finalY}}px)`;
-                    }}, 2600);
+                    setTimeout(() => {{ wheel.style.transition = 'transform 0.8s cubic-bezier(0.34, 1.56, 0.64, 1)'; wheel.style.transform = `translateY(${{finalY}}px)`; }}, 2600);
                 }}
-                else if (effectType === 3) {{ // 4. Slide (เบรกหัวทิ่ม)
+                else if (effectType === 3) {{ 
                     const earlyY = visibleCenterOffset - ((finalTargetIndex - 3) * itemHeight);
                     wheel.style.transition = 'transform 2.5s cubic-bezier(0.1, 0.9, 0.3, 1)';
                     wheel.style.transform = `translateY(${{earlyY}}px)`;
-                    setTimeout(() => {{
-                        wheel.style.transition = 'transform 1.2s ease-in-out';
-                        wheel.style.transform = `translateY(${{finalY}}px)`;
-                    }}, 2600);
+                    setTimeout(() => {{ wheel.style.transition = 'transform 1.2s ease-in-out'; wheel.style.transform = `translateY(${{finalY}}px)`; }}, 2600);
                 }}
-                else if (effectType === 4) {{ // 5. Tease (แกล้งจะหลุด)
+                else if (effectType === 4) {{ 
                     const teaseY = visibleCenterOffset - ((finalTargetIndex + 0.8) * itemHeight);
                     wheel.style.transition = 'transform 3.5s cubic-bezier(0.1, 0.8, 0.1, 1)';
                     wheel.style.transform = `translateY(${{teaseY}}px)`;
-                    setTimeout(() => {{
-                        wheel.style.transition = 'transform 0.3s ease-out';
-                        wheel.style.transform = `translateY(${{finalY}}px)`;
-                    }}, 3700);
+                    setTimeout(() => {{ wheel.style.transition = 'transform 0.3s ease-out'; wheel.style.transform = `translateY(${{finalY}}px)`; }}, 3700);
                 }}
-                else if (effectType === 5) {{ // 6. Snail (สโลว์ไลฟ์) [NEW]
+                else if (effectType === 5) {{ 
                     wheel.style.transition = 'transform 4.8s cubic-bezier(0.2, 0.95, 0.6, 1)';
                     wheel.style.transform = `translateY(${{finalY}}px)`;
                 }}
-                else if (effectType === 6) {{ // 7. Glitch (ผีหลอก)
+                else if (effectType === 6) {{ 
                     const nearY = visibleCenterOffset - ((finalTargetIndex - 1) * itemHeight);
                     wheel.style.transition = 'transform 2.5s cubic-bezier(0.1, 0.8, 0.5, 1)';
                     wheel.style.transform = `translateY(${{nearY}}px)`;
-                    
                     setTimeout(() => {{ wheel.style.transition = 'transform 0.1s linear'; wheel.style.transform = `translateY(${{visibleCenterOffset - ((finalTargetIndex + 1) * itemHeight)}}px)`; }}, 2600);
                     setTimeout(() => {{ wheel.style.transform = `translateY(${{visibleCenterOffset - ((finalTargetIndex - 2) * itemHeight)}}px)`; }}, 2750);
                     setTimeout(() => {{ wheel.style.transition = 'transform 0.2s ease-out'; wheel.style.transform = `translateY(${{finalY}}px)`; }}, 2950);
                 }}
-                else if (effectType === 7) {{ // 8. Fake Out (สับขาหลอก) [NEW]
+                else if (effectType === 7) {{ 
                     const wrongY = visibleCenterOffset - ((finalTargetIndex - 1) * itemHeight);
                     wheel.style.transition = 'transform 2.8s cubic-bezier(0.1, 0.8, 0.1, 1)';
                     wheel.style.transform = `translateY(${{wrongY}}px)`;
-                    // นิ่งให้คนดีใจ 1.2 วินาที แล้วร่วงตุ้บ!
-                    setTimeout(() => {{
-                        wheel.style.transition = 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)';
-                        wheel.style.transform = `translateY(${{finalY}}px)`;
-                    }}, 4000);
+                    setTimeout(() => {{ wheel.style.transition = 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)'; wheel.style.transform = `translateY(${{finalY}}px)`; }}, 4000);
                 }}
 
-                // แสดงผลลัพธ์ (รวมเวลาอนิเมชั่นทั้งหมดที่นานสุดคือ 5 วินาที)
+                // แสดงผลลัพธ์หลังจบอนิเมชั่น (ประมาณ 5 วินาที)
                 setTimeout(() => {{
                     document.getElementById('picker').style.display = 'none';
                     const res = document.getElementById('result');
@@ -247,6 +277,16 @@ def get_mega_wheel_html(target_number, target_category, all_numbers):
                     setTimeout(() => {{
                         res.style.opacity = '1';
                         document.getElementById('win-sound').play().catch(e => console.log(e));
+                        
+                        // รออีก 1 วินาที ให้ข้อความ "คลิกเพื่อปิด" โผล่ขึ้นมา แล้วเปิดระบบรับคลิก
+                        setTimeout(() => {{
+                            document.getElementById('instruction').style.display = 'block';
+                            window.addEventListener('click', closeToBoard);
+                            window.addEventListener('keydown', (e) => {{
+                                if (e.code === 'Space' || e.code === 'Enter') closeToBoard();
+                            }});
+                        }}, 1000);
+                        
                     }}, 50);
                 }}, 5200);
             }};
@@ -293,94 +333,3 @@ tab_play, tab_setup = st.tabs(["🎮 โหมดเล่นเกม", "⚙️
 
 # ----------------- จัดเตรียมกระดาน -----------------
 with tab_setup:
-    st.header("1. ระบบจับคู่หมวดหมู่กับตัวเลข")
-    default_cats = "\n".join([f"หมวดที่ {i}" for i in range(1, 51)])
-    raw_cats = st.text_area("ป้อนรายชื่อหมวดหมู่ (บรรทัดละ 1 หมวด) แล้วกดปุ่มด้านล่าง ระบบจะสุ่มจับคู่กับเลขให้", default_cats, height=150)
-    
-    if st.button("🔄 สุ่มจับคู่หมวดหมู่กับตัวเลข", type="primary"):
-        cat_list = [c.strip() for c in raw_cats.split('\n') if c.strip()]
-        random.shuffle(cat_list)
-        st.session_state.categories_map = {str(i+1): cat for i, cat in enumerate(cat_list)}
-        st.session_state.pool_numbers = list(st.session_state.categories_map.keys())
-        st.success(f"✅ จับคู่สำเร็จทั้งหมด {len(cat_list)} หมวดหมู่! สามารถไปดูผลได้ในโหมดเล่นเกม")
-        reset_game()
-        
-    st.markdown("---")
-    st.header("2. กรอกตัวเลขลงกระดาน (มีเฉพาะตัวเลข)")
-    col_btn1, col_btn2 = st.columns([1, 4])
-    with col_btn1:
-        st.button("✨ สุ่มเติมเลขลงช่องว่าง", on_click=autofill_numbers, use_container_width=True)
-    with col_btn2:
-        st.button("🔄 ล้างกระดานใหม่ทั้งหมด", on_click=reset_game, type="secondary", use_container_width=True)
-
-    st.write("")
-    size = st.session_state.grid_size
-    for r in range(size):
-        cols = st.columns(size)
-        for c in range(size):
-            with cols[c]:
-                st.text_input(f"R{r}C{c}", key=f"cell_{r}_{c}", label_visibility="collapsed", placeholder="-")
-
-# ----------------- หน้าเล่นเกม -----------------
-with tab_play:
-    if not st.session_state.categories_map:
-        st.warning("⚠️ กรุณาไปที่แท็บ 'ตั้งค่ากระดาน' เพื่อสุ่มจับคู่หมวดหมู่กับตัวเลขก่อนเริ่มเล่น")
-        st.stop()
-
-    if st.session_state.is_spinning:
-        # === โหมดหมุนเต็มจอ (ซ่อนกระดาน) ===
-        target = st.session_state.pending_target
-        cat_name = st.session_state.categories_map.get(target, "")
-        
-        spin_overlay = st.empty()
-        with spin_overlay:
-            components.html(get_mega_wheel_html(target, cat_name, st.session_state.pool_numbers), height=700)
-            
-        # เผื่อเวลาให้ Python รอจนกว่า JS จะแสดงผลครบ (ยาวสุด 5.2s + ดีเลย์นิดหน่อย)
-        time.sleep(6.2) 
-        
-        st.session_state.is_spinning = False
-        st.session_state.drawn_numbers.append(target)
-        st.session_state.current_draw = target
-        st.session_state.pending_target = None
-        st.rerun()
-
-    else:
-        # === โหมดปกติ (แสดงแผงสุ่มซ้าย กระดานขวา) ===
-        col_left, col_right = st.columns([1.5, 2.5], gap="large")
-        
-        with col_left:
-            st.subheader("🎰 สุ่มบิงโก")
-            
-            valid_pool = [n for n in st.session_state.pool_numbers if n not in st.session_state.drawn_numbers]
-            
-            if st.button("🎯 กดเพื่อสุ่ม! (เต็มจอ)", use_container_width=True, type="primary"):
-                if valid_pool:
-                    st.session_state.pending_target = random.choice(valid_pool)
-                    st.session_state.is_spinning = True
-                    st.rerun() 
-                else:
-                    st.warning("สุ่มตัวเลขครบหมดแล้ว!")
-            
-            if st.session_state.current_draw:
-                last_draw = st.session_state.current_draw
-                cat_name = st.session_state.categories_map.get(last_draw, "")
-                components.html(get_static_result_html(last_draw, cat_name, is_bingo=st.session_state.bingo_won), height=300)
-            else:
-                st.markdown("<div style='text-align:center; font-size: 24px; color: gray; padding: 40px; border: 3px dashed #555; border-radius: 15px; margin-top:20px;'>กดปุ่มด้านบนเพื่อเริ่มสุ่ม</div>", unsafe_allow_html=True)
-
-            st.markdown("---")
-            st.write(f"**ประวัติการออกหมายเลข ({len(st.session_state.drawn_numbers)}):**")
-            if st.session_state.drawn_numbers:
-                history_html = "".join([f"<span style='background:#333; color:#fff; border: 1px solid #555; padding:5px 10px; border-radius:15px; margin:2px; display:inline-block; font-weight:bold;'>{n}</span>" for n in st.session_state.drawn_numbers])
-                st.markdown(history_html, unsafe_allow_html=True)
-
-        with col_right:
-            if check_bingo() and not st.session_state.bingo_won:
-                st.session_state.bingo_won = True
-                st.balloons()
-                st.rerun()
-
-            header_text = "🏆 กระดานบิงโกแตกแล้ว!" if st.session_state.bingo_won else "📋 กระดานของคุณ"
-            st.subheader(header_text)
-            st.markdown(generate_board_html(), unsafe_allow_html=True)
