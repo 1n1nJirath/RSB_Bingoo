@@ -8,7 +8,6 @@ st.set_page_config(page_title="Bingo Mega Wheel", layout="wide")
 # ==========================================
 # 0. ระบบคีย์ลัด (Keyboard Shortcuts)
 # ==========================================
-# ฝัง Javascript เข้าไปที่ Window หลัก เพื่อดักจับการกด Spacebar / Enter
 def inject_keyboard_shortcuts():
     js = """
     <script>
@@ -18,10 +17,8 @@ def inject_keyboard_shortcuts():
         script.id = 'bingo-shortcuts';
         script.innerHTML = `
             document.addEventListener('keydown', function(e) {
-                // เช็คว่ากด Spacebar หรือ Enter (และไม่ได้พิมพ์ช่อง Text อยู่)
                 if ((e.code === 'Space' || e.code === 'Enter') && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
                     e.preventDefault();
-                    // วนหาปุ่ม Streamlit แล้วสั่งคลิก
                     const btns = document.querySelectorAll('button');
                     btns.forEach(b => {
                         if (b.innerText.includes('กดเพื่อสุ่ม! (Spacebar)')) b.click();
@@ -134,7 +131,12 @@ def generate_board_html():
 # 3. โค้ด HTML วงล้อไซส์ยักษ์
 # ==========================================
 def get_mega_wheel_html(target_number, target_category, all_numbers):
-    js_numbers = str(all_numbers) 
+    # สับเปลี่ยนตำแหน่งเลขในวงล้อให้มั่ว ไม่เรียงกัน
+    shuffled_numbers = all_numbers.copy()
+    random.shuffle(shuffled_numbers)
+    
+    # แปลงเป็นสตริงเพื่อส่งให้ Javascript
+    js_numbers = str(shuffled_numbers) 
     
     return f"""
     <!DOCTYPE html>
@@ -193,7 +195,6 @@ def get_mega_wheel_html(target_number, target_category, all_numbers):
                 wheel.appendChild(li);
             }});
 
-            // ฟังก์ชันสั่ง Streamlit ให้กดปุ่มซ่อนล้อ
             function closeToBoard() {{
                 const btns = window.parent.document.querySelectorAll('button');
                 btns.forEach(b => {{
@@ -266,7 +267,6 @@ def get_mega_wheel_html(target_number, target_category, all_numbers):
                     setTimeout(() => {{ wheel.style.transition = 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)'; wheel.style.transform = `translateY(${{finalY}}px)`; }}, 4000);
                 }}
 
-                // แสดงผลลัพธ์หลังจบอนิเมชั่น (ประมาณ 5 วินาที)
                 setTimeout(() => {{
                     document.getElementById('picker').style.display = 'none';
                     const res = document.getElementById('result');
@@ -278,7 +278,6 @@ def get_mega_wheel_html(target_number, target_category, all_numbers):
                         res.style.opacity = '1';
                         document.getElementById('win-sound').play().catch(e => console.log(e));
                         
-                        // รออีก 1 วินาที ให้ข้อความ "คลิกเพื่อปิด" โผล่ขึ้นมา แล้วเปิดระบบรับคลิก
                         setTimeout(() => {{
                             document.getElementById('instruction').style.display = 'block';
                             window.addEventListener('click', closeToBoard);
@@ -368,17 +367,13 @@ with tab_play:
         st.stop()
 
     if st.session_state.is_spinning:
-        # === โหมดหมุนเต็มจอ (แบบรอกดปิดเอง) ===
         target = st.session_state.pending_target
         cat_name = st.session_state.categories_map.get(target, "")
         
-        # เรนเดอร์ HTML วงล้อ (ซึ่งตัวมันเองมีระบบดักจับการคลิกอยู่ด้านใน)
         spin_overlay = st.empty()
         with spin_overlay:
             components.html(get_mega_wheel_html(target, cat_name, st.session_state.pool_numbers), height=700)
             
-        # สร้างปุ่มสำหรับกดเพื่อปิดหน้าต่างนี้ (ปุ่มนี้จะถูก Javascript สั่งคลิกอัตโนมัติเมื่อกด Space/Click ที่ HTML)
-        # หรือถ้ากด Spacebar รัวๆ ตอนหมุน มันจะทำงานเหมือนปุ่ม "ข้าม (Skip)" ครับ
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
             if st.button("🔙 ข้าม / ปิดและกลับกระดาน (Spacebar)", use_container_width=True):
@@ -389,7 +384,6 @@ with tab_play:
                 st.rerun()
 
     else:
-        # === โหมดปกติ (แสดงแผงสุ่มซ้าย กระดานขวา) ===
         col_left, col_right = st.columns([1.5, 2.5], gap="large")
         
         with col_left:
@@ -397,7 +391,6 @@ with tab_play:
             
             valid_pool = [n for n in st.session_state.pool_numbers if n not in st.session_state.drawn_numbers]
             
-            # ปุ่มสุ่ม
             if st.button("🎯 กดเพื่อสุ่ม! (Spacebar)", use_container_width=True, type="primary"):
                 if valid_pool:
                     st.session_state.pending_target = random.choice(valid_pool)
